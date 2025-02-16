@@ -14,6 +14,57 @@ SAMBANOVA_API_KEY = os.getenv('SAMBANOVA_API_KEY')
 if not SAMBANOVA_API_KEY:
     raise ValueError("SAMBANOVA_API_KEY not found in environment variables")
 
+async def summarize_text(text: str) -> str:
+    """
+    Summarize the given text using SambaNova's LLM API
+    
+    Args:
+        text (str): The text to summarize
+        
+    Returns:
+        str: The summarized text
+    """
+    headers = {
+        "Authorization": f"Bearer {SAMBANOVA_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "stream": False,
+        "model": "Meta-Llama-3.1-70B-Instruct",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Please provide a concise summary of the following text in JSON format with the key 'retrieved_context'. Text: {text}"
+                    }
+                ]
+            }
+        ]
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api.sambanova.ai/v1/chat/completions",
+                headers=headers,
+                json=payload
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise Exception(f"API request failed with status {response.status}: {error_text}")
+                
+                response_text = await response.text()
+                data = json.loads(response_text)
+                if 'choices' in data and len(data['choices']) > 0:
+                    return data['choices'][0]['message']['content']
+                return "No summary generated"
+                
+    except Exception as e:
+        return f"Error generating summary: {str(e)}"
+
 def get_latest_screenshot():
     """
     Get the path to the latest screenshot using file modification time

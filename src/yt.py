@@ -112,9 +112,18 @@ class YouTubeProcessor:
             full_text = " ".join([entry['text'] for entry in transcript])
             
             # Generate summary using Gemini
+            # prompt = f"Please provide a concise summary of this video transcript:\n\n{full_text}"
+            # response = model.generate_content(prompt)
+
+            from together import Together
+
+            client = Together()
             prompt = f"Please provide a concise summary of this video transcript:\n\n{full_text}"
-            response = model.generate_content(prompt)
-            return response.text
+            response = client.chat.completions.create(
+                model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.choices[0].message.content
         except Exception as e:
             print(f"Error generating summary: {str(e)}")
             return None

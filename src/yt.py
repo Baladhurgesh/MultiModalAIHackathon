@@ -165,12 +165,60 @@ class YouTubeProcessor:
             print(f"Error searching transcript: {str(e)}")
             return None
 
+    def save_transcript(self, video_id: str, output_dir: str = "transcripts") -> str:
+        """
+        Save the video transcript to a text file
+        
+        Args:
+            video_id (str): YouTube video ID
+            output_dir (str): Directory to save transcript files (default: 'transcripts')
+            
+        Returns:
+            str: Path to the saved transcript file
+        """
+        try:
+            # Create transcripts directory if it doesn't exist
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            
+            # Get video info for the filename
+            video_info = self.get_video_info(video_id)
+            title = video_info['title']
+            # Clean title for filename
+            clean_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            
+            # Get transcript
+            transcript = self.get_transcript(video_id)
+            if not transcript:
+                return None
+                
+            # Create filename with video ID and clean title
+            filename = f"{clean_title}_{video_id}.txt"
+            filepath = os.path.join(output_dir, filename)
+            
+            # Write transcript to file with timestamps
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(f"Title: {title}\n")
+                f.write(f"Video ID: {video_id}\n")
+                f.write(f"Channel: {video_info['channel']}\n")
+                f.write(f"Published: {video_info['published_at']}\n")
+                f.write("\n" + "="*50 + "\n\n")
+                
+                for entry in transcript:
+                    f.write(f"{entry['timestamp']} {entry['text']}\n")
+            
+            print(f"Transcript saved to: {filepath}")
+            return filepath
+            
+        except Exception as e:
+            print(f"Error saving transcript: {str(e)}")
+            return None
+
 def main():
     # Initialize the processor
     yt = YouTubeProcessor()
     
     # Get video URL from user
-    # video_url = input("Please enter the YouTube video URL: ")
     video_url = "https://www.youtube.com/watch?v=3f8dv72Ex6U&ab_channel=JamesHoffmann"
     
     # Extract video ID
@@ -178,6 +226,11 @@ def main():
     if not video_id:
         print("Invalid YouTube URL")
         return
+    
+    # Save transcript
+    transcript_file = yt.save_transcript(video_id)
+    if transcript_file:
+        print(f"\nTranscript saved to: {transcript_file}")
     
     # Get video information
     print("\nRetrieving video information...")

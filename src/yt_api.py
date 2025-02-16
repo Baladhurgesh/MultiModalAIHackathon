@@ -88,6 +88,22 @@ class YouTubeAnalyzer:
         
         return formatted_results
 
+    def save_transcript(self, output_dir: str = "transcripts") -> str:
+        """
+        Save the video transcript to a text file
+        
+        Args:
+            output_dir (str): Directory to save transcript files
+            
+        Returns:
+            str: Path to the saved transcript file
+            
+        Example:
+            >>> filepath = analyzer.save_transcript()
+            >>> print(f"Saved to: {filepath}")
+        """
+        return self.processor.save_transcript(self.video_id, output_dir)
+
 def main():
     """Example usage of the YouTubeAnalyzer"""
     
@@ -95,7 +111,8 @@ def main():
     print("\nExample 1: Initialize and get video info")
     print("-" * 50)
     try:
-        analyzer = YouTubeAnalyzer("https://www.youtube.com/watch?v=3f8dv72Ex6U")
+        analyzer = YouTubeAnalyzer("https://www.youtube.com/watch?v=J9Gb-tkIJLo&ab_channel=Tom%27sCoffeeCorner")
+        transcript_file = analyzer.save_transcript()
         details = analyzer.get_video_details()
         print(f"Video Title: {details['title']}")
         print(f"Channel: {details['channel']}")
@@ -115,7 +132,7 @@ def main():
     print("\nExample 3: Search transcript")
     print("-" * 50)
     try:
-        results = analyzer.search("tell me about static build up")
+        results = analyzer.search("how about the tech specs")
         for result in results:
             print(f"\nTimestamp: {result['timestamp']}")
             print(f"Answer: {result['answer']}")

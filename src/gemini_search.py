@@ -4,9 +4,9 @@ import os
 import requests
 import json
 from datetime import datetime
-"Search AGENT CODE"
-ANALYSIS_DIR = "analysis_results" 
 
+from deep_lake_vectordb import query_vector_search, create_embeddings
+ANALYSIS_DIR = "analysis_results" 
 class SearchAgent:  
 
     def __init__(self, api_key):
@@ -195,12 +195,16 @@ def save_gemini_results(results: dict) -> str:
     try:
         if not os.path.exists(ANALYSIS_DIR):
             os.makedirs(ANALYSIS_DIR)
-            
+
+        #add_embeddings to vector db
+        print("CREATING EMBEDDINGS for PRODUCT SUMMARY....")
+        create_embeddings(results['response'])
+        print("EMBEDDINGS CREATED for PRODUCT SUMMARY")
         product_name = results['product_name']
         clean_name = "".join(c for c in product_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        filename = f"gemini_{clean_name}_{timestamp}.json"
+        filename = f"gemini_{clean_name.split(' ')[0]}_{timestamp}.json"
         filepath = os.path.join(ANALYSIS_DIR, filename)
         
         with open(filepath, 'w', encoding='utf-8') as f:

@@ -2,11 +2,14 @@ import deeplake
 from deeplake import types
 import openai
 import numpy as np
+import os
+from dotenv import load_dotenv
+load_dotenv()
 # Define dataset path (store locally or in the cloud)
 
 dataset_path = "/Users/bala/Documents/MultiModalAIHackathon"
 import openai
-openai.api_key = OPENAI_API_KEY
+openai.api_key = os.getenv("OPENAI_API_KEY")
 def embedding_function(texts, model="text-embedding-3-small"):
     if isinstance(texts, str):
         texts = [texts]

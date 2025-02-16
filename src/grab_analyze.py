@@ -12,6 +12,7 @@ from test_snova import analyze_image
 from gemini_search import process_product_analysis
 load_dotenv()
 
+
 app = FastAPI()
 ANALYSIS_DIR = "analysis_results"
 # Add CORS middleware to allow requests from the Chrome extension
@@ -67,6 +68,8 @@ async def save_analysis_result(analysis_data: dict) -> str:
     except Exception as e:
         print(f"Error saving analysis: {str(e)}")
         return None
+
+
 
 @app.post("/uploadimage")
 async def save_screenshot(request: Request):

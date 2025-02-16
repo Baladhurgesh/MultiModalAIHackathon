@@ -9,10 +9,11 @@ from dotenv import load_dotenv
 import aiohttp
 import json
 from test_snova import analyze_image
+from gemini_search import process_product_analysis
 load_dotenv()
 
 app = FastAPI()
-
+ANALYSIS_DIR = "analysis_results"
 # Add CORS middleware to allow requests from the Chrome extension
 app.add_middleware(
     CORSMiddleware,
@@ -32,6 +33,11 @@ SCREENSHOTS_DIR = "screenshots"
 if not os.path.exists(SCREENSHOTS_DIR):
     os.makedirs(SCREENSHOTS_DIR)
 
+# Add this constant after other constants
+ANALYSIS_DIR = "analysis_results"
+if not os.path.exists(ANALYSIS_DIR):
+    os.makedirs(ANALYSIS_DIR)
+
 async def send_to_service(analysis_data):
     try:
         async with aiohttp.ClientSession() as session:
@@ -44,6 +50,22 @@ async def send_to_service(analysis_data):
                     return None
     except Exception as e:
         print(f"Error sending to service: {str(e)}")
+        return None
+
+async def save_analysis_result(analysis_data: dict) -> str:
+    """Save analysis result to a JSON file"""
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"analysis_{timestamp}.json"
+        filepath = os.path.join(ANALYSIS_DIR, filename)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(analysis_data, f, indent=4)
+            
+        print(f"Analysis saved to: {filepath}")
+        return filepath
+    except Exception as e:
+        print(f"Error saving analysis: {str(e)}")
         return None
 
 @app.post("/uploadimage")
@@ -97,16 +119,21 @@ async def save_screenshot(request: Request):
             "status": "success",
             "filepath": filepath,
             "analysis": analysis,
-            "product_name": product_name
+            "product_name": product_name,
+            "timestamp": datetime.now().isoformat()
         }
         
-        # Send to another service
-        service_response = await send_to_service(analysis_result)
+        # Save analysis result to JSON
+        analysis_file = await save_analysis_result(analysis_result)
         
-        # Include service response in the return
+        # Process with Gemini search
+        gemini_results = process_product_analysis(product_name)
+        
+        # Include both results in the return
         return {
             **analysis_result,
-            "service_response": service_response
+            "analysis_file": analysis_file,
+            "gemini_results": gemini_results
         }
         
     except Exception as e:

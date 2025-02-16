@@ -2,10 +2,12 @@ from google import genai
 from google.genai import types
 import os
 import requests
+import json
+from datetime import datetime
 "Search AGENT CODE"
+ANALYSIS_DIR = "analysis_results" 
 
-
-class SearchAgent:
+class SearchAgent:  
 
     def __init__(self, api_key):
         """Initialize the class with the API key and configure the model."""
@@ -103,28 +105,121 @@ class SearchAgent:
         pass  # History management logic will be added later
 
 
-if __name__ == "__main__":
-    
-    API_KEY = os.getenv("GEMINI_API_KEY")
-    
-    search_bot = SearchAgent(API_KEY)  # Create an instance of the class
-    product_name = "Baratza Encore ESP"
-    query = f"{product_name} - give me details about the product and cite top youtube reviews about the product if you find it."
-    search_bot.query(query)
+def get_latest_analysis():
+    """Get the most recent analysis result"""
+    try:
+        analysis_dir = "analysis_results"
+        if not os.path.exists(analysis_dir):
+            return None
+            
+        # Get the most recent analysis file
+        analysis_files = [f for f in os.listdir(analysis_dir) if f.endswith('.json')]
+        if not analysis_files:
+            return None
+            
+        latest_file = max(analysis_files, key=lambda x: os.path.getctime(os.path.join(analysis_dir, x)))
+        filepath = os.path.join(analysis_dir, latest_file)
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            analysis_data = json.load(f)
+            
+        return analysis_data
+    except Exception as e:
+        print(f"Error reading analysis: {str(e)}")
+        return None
 
-    # Answer
-    print("\nResponse:")
-    print(search_bot.answer())
 
-    # Citations
-    citations = search_bot.get_citations()
-    print("\nCitations:")
-    first_youtube_cite = None
-    for cite in citations:
-        if "youtube" in cite:
-            if first_youtube_cite is None:
+def process_product_analysis(product_name: str = None) -> dict:
+    """
+    Process product analysis using Gemini search
+    
+    Args:
+        product_name (str, optional): Product name to analyze. If None, gets from latest analysis.
+    
+    Returns:
+        dict: Results containing response and citations
+    """
+    try:
+        API_KEY = os.getenv("GEMINI_API_KEY")
+        search_bot = SearchAgent(API_KEY)
+
+        if not product_name:
+            # Get the latest analysis result
+            analysis_data = get_latest_analysis()
+            if not analysis_data:
+                print("No analysis data found")
+                return None
+
+            product_name = analysis_data.get('product_name')
+            if not product_name:
+                print("No product name found in analysis")
+                return None
+
+        print(f"\nAnalyzing product: {product_name}")
+        
+        # Construct and send query
+        query = f"{product_name} - give me details about the product and cite top youtube reviews about the product if you find it."
+        search_bot.query(query)
+
+        # Get response and citations
+        response = search_bot.answer()
+        citations = search_bot.get_citations()
+        
+        # Find first YouTube citation
+        first_youtube_cite = None
+        for cite in citations:
+            if "youtube" in cite.lower():
                 first_youtube_cite = cite
                 break
 
-    print(f"\nFirst YouTube Cite: {first_youtube_cite}")
+        # Prepare results
+        results = {
+            "product_name": product_name,
+            "response": response,
+            "citations": citations,
+            "youtube_citation": first_youtube_cite,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # Save results
+        save_gemini_results(results)
+        
+        return results
+
+    except Exception as e:
+        print(f"Error in Gemini search: {str(e)}")
+        return None
+
+def save_gemini_results(results: dict) -> str:
+    """Save Gemini search results to a JSON file"""
+    try:
+        if not os.path.exists(ANALYSIS_DIR):
+            os.makedirs(ANALYSIS_DIR)
+            
+        product_name = results['product_name']
+        clean_name = "".join(c for c in product_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        filename = f"gemini_{clean_name}_{timestamp}.json"
+        filepath = os.path.join(ANALYSIS_DIR, filename)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(results, f, indent=4)
+            
+        print(f"Gemini results saved to: {filepath}")
+        return filepath
+    except Exception as e:
+        print(f"Error saving Gemini results: {str(e)}")
+        return None
+
+if __name__ == "__main__":
+    results = process_product_analysis()
+    if results:
+        print("\nResponse:")
+        print(results['response'])
+        print("\nCitations:")
+        for cite in results['citations']:
+            print(cite)
+        if results['youtube_citation']:
+            print(f"\nFirst YouTube Citation: {results['youtube_citation']}")
 

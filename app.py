@@ -2,7 +2,7 @@ import streamlit as st
 from PIL import Image
 import requests
 from io import BytesIO
-
+import subprocess
 # Set page config
 st.set_page_config(
     page_title="YouTube Video Analyzer",
@@ -116,3 +116,20 @@ with chat_col1:
 with chat_col2:
     st.button("💬 Ask", type="primary") 
     st.button("Talk to the AI 🤖", type="primary") 
+
+
+
+with chat_col2:
+    if st.button("💬 Ask", type="primary"):
+        if user_question:
+            
+        else:
+            st.warning("Please enter a question first!")
+    if st.button("Talk to the AI 🤖", type="primary") :
+        print("Calling to talk to the AI")
+        curl_command = ["curl",
+            "-X", "POST", "https://workflows.platform.happyrobot.ai/hooks/l3oos32d6szw",
+            "-H", "Content-Type: application/json",
+            "-d", '{"user_name": "Sanil", "context": "Slightly Longer Review: The AuraGlow Sleep Mask is a reliable option for minimizing light disruption during sleep. Its contoured design, particularly around the nose bridge, effectively reduces ambient light, even in brighter environments. The adjustable strap ensures a comfortable and secure fit, accommodating various head sizes without slippage. The mask is made from a soft modal blend, which breathes well and prevents overheating—a common complaint with some sleep masks. The stitching appears durable, and after several weeks of use, there are no signs of wear. While it\'t offer noise cancellation, its light-blocking and comfort make it a worthwhile choice for improving sleep quality."}'
+        ]
+        subprocess.run(curl_command)

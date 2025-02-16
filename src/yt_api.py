@@ -1,144 +1,282 @@
-from typing import Dict, List, Optional, Union
-import google.generativeai as genai
-from dotenv import load_dotenv
+from googleapiclient.discovery import build
+from youtube_transcript_api import YouTubeTranscriptApi
 import os
-from yt import YouTubeProcessor
+from dotenv import load_dotenv
+import re
+import google.generativeai as genai
+from typing import List, Dict, Optional
 
 # Load environment variables
 load_dotenv()
 
-class YouTubeAnalyzer:
-    def __init__(self, url: str):
-        """
-        Initialize the YouTube analyzer with a video URL
-        
-        Args:
-            url (str): YouTube video URL
-        
-        Example:
-            >>> analyzer = YouTubeAnalyzer("https://www.youtube.com/watch?v=3f8dv72Ex6U")
-        """
-        self.processor = YouTubeProcessor()
-        self.video_id = self.processor.extract_video_id(url)
-        if not self.video_id:
-            raise ValueError("Invalid YouTube URL")
-        
-        # Cache video info and transcript
-        self.video_info = self.processor.get_video_info(self.video_id)
-        self.transcript = self.processor.get_transcript(self.video_id)
+# Configure Gemini
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-pro')
 
-    def get_video_details(self) -> Dict:
-        """
-        Get basic video information
-        
-        Returns:
-            Dict containing video title, channel, views, likes
-            
-        Example:
-            >>> details = analyzer.get_video_details()
-            >>> print(details['title'])
-        """
-        return self.video_info
+class YouTubeProcessor:
+    def __init__(self):
+        self.api_key = os.getenv('YOUTUBE_API_KEY')
+        self.youtube = build('youtube', 'v3', 
+                      developerKey=self.api_key,
+                      cache_discovery=False,
+                      static_discovery=False)
+        self.transcript_cache = None
+        self.video_info_cache = None
 
-    def get_summary(self) -> str:
-        """
-        Get a summary of the video content
-        
-        Returns:
-            str: Summary of the video
+    def extract_video_id(self, url: str) -> str:
+        """Extract video ID from various forms of YouTube URLs"""
+        try:
+            patterns = [
+                r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
+                r'(?:embed\/)([0-9A-Za-z_-]{11})',
+                r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})'
+            ]
             
-        Example:
-            >>> summary = analyzer.get_summary()
-            >>> print(summary)
-        """
-        return self.processor.get_summary(self.video_id)
+            for pattern in patterns:
+                match = re.search(pattern, url)
+                if match:
+                    return match.group(1)
+            return None
+        except Exception as e:
+            print(f"Error extracting video ID: {str(e)}")
+            return None
 
-    def search(self, query: str) -> List[Dict]:
-        """
-        Search the video transcript for relevant segments
-        
-        Args:
-            query (str): Search query (e.g., "talk about coffee beans")
+    def get_video_info(self, video_id: str) -> dict:
+        """Retrieve video information using YouTube API"""
+        try:
+            if self.video_info_cache:
+                return self.video_info_cache
+
+            request = self.youtube.videos().list(
+                part="snippet,contentDetails,statistics",
+                id=video_id
+            )
+            response = request.execute()
+
+            if not response['items']:
+                return None
+
+            video_data = response['items'][0]
+            self.video_info_cache = {
+                'title': video_data['snippet']['title'],
+                'description': video_data['snippet']['description'],
+                'channel': video_data['snippet']['channelTitle'],
+                'published_at': video_data['snippet']['publishedAt'],
+                'view_count': video_data['statistics']['viewCount'],
+                'like_count': video_data['statistics'].get('likeCount', 'N/A'),
+                'duration': video_data['contentDetails']['duration']
+            }
+            return self.video_info_cache
+        except Exception as e:
+            print(f"Error getting video info: {str(e)}")
+            return None
+
+    def get_transcript(self, video_id: str) -> List[Dict]:
+        """Retrieve video transcript with timestamps"""
+        try:
+            if self.transcript_cache:
+                return self.transcript_cache
+
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
             
-        Returns:
-            List of dictionaries containing:
-                - timestamp: "[MM:SS]" format
-                - text: Relevant transcript text
-                - hyperlink: Direct YouTube URL with timestamp
-                - answer: Relevant segment text
+            # Format each transcript entry with timestamp
+            formatted_transcript = []
+            for entry in transcript_list:
+                # Convert duration to minutes and seconds
+                start_seconds = int(entry['start'])
+                minutes = start_seconds // 60
+                seconds = start_seconds % 60
                 
-        Example:
-            >>> results = analyzer.search("coffee grinding technique")
-            >>> for result in results:
-            >>>     print(f"Link: {result['hyperlink']}")
-            >>>     print(f"Answer: {result['answer']}")
-        """
-        results = self.processor.search_transcript(self.video_id, query)
-        if not results:
-            return []
-        
-        # Reformat results to match API structure
-        formatted_results = []
-        for result in results:
-            formatted_results.append({
-                'timestamp': result['timestamp'],
-                'hyperlink': result['url'],
-                'answer': result['text']
-            })
-        
-        return formatted_results
+                # Format timestamp and text
+                timestamp = f"[{minutes:02d}:{seconds:02d}]"
+                formatted_entry = {
+                    'timestamp': timestamp,
+                    'text': entry['text'],
+                    'start': entry['start'],
+                    'duration': entry['duration']
+                }
+                formatted_transcript.append(formatted_entry)
+            
+            self.transcript_cache = formatted_transcript
+            return formatted_transcript
+        except Exception as e:
+            print(f"Error getting transcript: {str(e)}")
+            return None
 
-    def save_transcript(self, output_dir: str = "transcripts") -> str:
+    def get_summary(self, video_id: str) -> str:
+        """Generate a summary of the video using Gemini"""
+        try:
+            transcript = self.get_transcript(video_id)
+            if not transcript:
+                return None
+
+            # Combine all transcript text
+            full_text = " ".join([entry['text'] for entry in transcript])
+            
+            # Generate summary using Gemini
+            # prompt = f"Please provide a concise summary of this video transcript:\n\n{full_text}"
+            # response = model.generate_content(prompt)
+
+            from together import Together
+
+            client = Together()
+            prompt = f"Please provide a concise summary of this video transcript:\n\n{full_text}"
+            response = client.chat.completions.create(
+                model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error generating summary: {str(e)}")
+            return None
+
+    def search_transcript(self, video_id: str, query: str) -> List[Dict]:
+        """Search transcript for relevant segments using Gemini"""
+        try:
+            transcript = self.get_transcript(video_id)
+            if not transcript:
+                return None
+
+            # Create context for Gemini
+            context = "This is a YouTube video transcript with timestamps. "
+            context += "Find the most relevant segments that answer this question. Doesnt have to be exact but make sure it's relevant in semantic meaning and context: "
+            context += f"'{query}'\n\n"
+            
+            # Add transcript segments
+            for entry in transcript:
+                context += f"{entry['timestamp']}: {entry['text']}\n"
+
+            prompt = context + "\nPlease identify and return the most relevant timestamps and their text that answer the query. Format your response as: [MM:SS] Text content"
+            
+            response = model.generate_content(prompt)
+            
+            # Process and format the response
+            relevant_segments = []
+            for line in response.text.split('\n'):
+                if '[' in line and ']' in line:  # Check if line contains timestamp
+                    # Find matching original transcript entry for additional metadata
+                    timestamp = line[line.find('['): line.find(']')+1]
+                    for entry in transcript:
+                        if entry['timestamp'] == timestamp:
+                            # Create YouTube timestamp URL
+                            time_seconds = int(entry['start'])
+                            youtube_url = f"https://youtube.com/watch?v={video_id}&t={time_seconds}"
+                            
+                            relevant_segments.append({
+                                'timestamp': timestamp,
+                                'text': line[line.find(']')+1:].strip(),
+                                'start': entry['start'],
+                                'duration': entry['duration'],
+                                'url': youtube_url
+                            })
+                            break
+
+            return relevant_segments
+        except Exception as e:
+            print(f"Error searching transcript: {str(e)}")
+            return None
+
+    def save_transcript(self, video_id: str, output_dir: str = "transcripts") -> str:
         """
         Save the video transcript to a text file
         
         Args:
-            output_dir (str): Directory to save transcript files
+            video_id (str): YouTube video ID
+            output_dir (str): Directory to save transcript files (default: 'transcripts')
             
         Returns:
             str: Path to the saved transcript file
-            
-        Example:
-            >>> filepath = analyzer.save_transcript()
-            >>> print(f"Saved to: {filepath}")
         """
-        return self.processor.save_transcript(self.video_id, output_dir)
+        try:
+            # Create transcripts directory if it doesn't exist
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            
+            # Get video info for the filename
+            video_info = self.get_video_info(video_id)
+            title = video_info['title']
+            # Clean title for filename
+            clean_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            
+            # Get transcript
+            transcript = self.get_transcript(video_id)
+            if not transcript:
+                return None
+                
+            # Create filename with video ID and clean title
+            filename = f"{clean_title}_{video_id}.txt"
+            filepath = os.path.join(output_dir, filename)
+            
+            # Write transcript to file with timestamps
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(f"Title: {title}\n")
+                f.write(f"Video ID: {video_id}\n")
+                f.write(f"Channel: {video_info['channel']}\n")
+                f.write(f"Published: {video_info['published_at']}\n")
+                f.write("\n" + "="*50 + "\n\n")
+                
+                for entry in transcript:
+                    f.write(f"{entry['timestamp']} {entry['text']}\n")
+            
+            print(f"Transcript saved to: {filepath}")
+            return filepath
+            
+        except Exception as e:
+            print(f"Error saving transcript: {str(e)}")
+            return None
 
 def main():
-    """Example usage of the YouTubeAnalyzer"""
+    # Initialize the processor
+    yt = YouTubeProcessor()
     
-    # Example 1: Basic initialization and video info
-    print("\nExample 1: Initialize and get video info")
-    print("-" * 50)
-    try:
-        analyzer = YouTubeAnalyzer("https://www.youtube.com/watch?v=J9Gb-tkIJLo&ab_channel=Tom%27sCoffeeCorner")
-        transcript_file = analyzer.save_transcript()
-        details = analyzer.get_video_details()
-        print(f"Video Title: {details['title']}")
-        print(f"Channel: {details['channel']}")
-    except Exception as e:
-        print(f"Error: {str(e)}")
+    # Get video URL from user
+    video_url = "https://www.youtube.com/watch?v=3f8dv72Ex6U&ab_channel=JamesHoffmann"
+    
+    # Extract video ID
+    video_id = yt.extract_video_id(video_url)
+    if not video_id:
+        print("Invalid YouTube URL")
+        return
+    
+    # Save transcript
+    transcript_file = yt.save_transcript(video_id)
+    if transcript_file:
+        print(f"\nTranscript saved to: {transcript_file}")
+    
+    # Get video information
+    print("\nRetrieving video information...")
+    video_info = yt.get_video_info(video_id)
+    if video_info:
+        print("\nVideo Information:")
+        print(f"Title: {video_info['title']}")
+        print(f"Channel: {video_info['channel']}")
+        print(f"Views: {video_info['view_count']}")
+        print(f"Likes: {video_info['like_count']}")
+    
+    # Get and display summary
+    print("\nGenerating video summary...")
+    summary = yt.get_summary(video_id)
+    if summary:
+        print("\nVideo Summary:")
+        print(summary)
 
-    # Example 2: Get video summary
-    print("\nExample 2: Get video summary")
-    print("-" * 50)
-    try:
-        summary = analyzer.get_summary()
-        print(f"Summary: {summary[:200]}...")  # Print first 200 chars
-    except Exception as e:
-        print(f"Error: {str(e)}")
+    # Interactive search loop
+    while True:
+        query = input("\nEnter search query (or 'quit' to exit): ")
+        if query.lower() == 'quit':
+            break
 
-    # Example 3: Search for specific content
-    print("\nExample 3: Search transcript")
-    print("-" * 50)
-    try:
-        results = analyzer.search("how about the tech specs")
-        for result in results:
-            print(f"\nTimestamp: {result['timestamp']}")
-            print(f"Answer: {result['answer']}")
-            print(f"Link: {result['hyperlink']}")
-    except Exception as e:
-        print(f"Error: {str(e)}")
+        print("\nSearching transcript...")
+        results = yt.search_transcript(video_id, query)
+        if results:
+            print("\nRelevant segments:")
+            for entry in results:
+                print(f"{entry['timestamp']} {entry['text']}")
+                print(f"🔗 Watch this segment: {entry['url']}")
+                print("-" * 50)
+        else:
+            print("No relevant segments found")
 
 if __name__ == "__main__":
     main()

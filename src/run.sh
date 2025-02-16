@@ -1,0 +1,1 @@
+curl -X POST http://localhost:4000/endpoint -H "Content-Type: application/json" -d '{"user_query": "How many stars does this product have?"}'

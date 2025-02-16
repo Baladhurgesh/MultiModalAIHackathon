@@ -4,10 +4,12 @@ import os
 from typing import List, Optional
 import uvicorn
 from deep_lake_vectordb import query_vector_search
-from src.test_snova import summarize_text
+from test_snova import summarize_text
 import json
 import re
 app = FastAPI()
+from dotenv import load_dotenv
+load_dotenv()   
 class QueryRequest(BaseModel):
     user_query: str
 
@@ -35,5 +37,5 @@ async def search_query(query: QueryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=4000)

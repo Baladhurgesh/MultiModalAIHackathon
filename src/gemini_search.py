@@ -198,7 +198,7 @@ def save_gemini_results(results: dict) -> str:
 
         #add_embeddings to vector db
         print("CREATING EMBEDDINGS for PRODUCT SUMMARY....")
-        create_embeddings(results['response'])
+        create_embeddings(results['response'], results['product_name'].split(' ')[0])
         print("EMBEDDINGS CREATED for PRODUCT SUMMARY")
         product_name = results['product_name']
         clean_name = "".join(c for c in product_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
